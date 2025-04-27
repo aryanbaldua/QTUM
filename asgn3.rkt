@@ -4,7 +4,7 @@
 ; Assignment by Aryan Baldua and Sathvik Chikala
 ; The assignment is not yet complete
 
-; NOTES ABOUT OVERALL ASSIGNMENT
+; NOTES ABOUT OVERALL ASSIGNMENT -------------------
 ; our personal errors should have QTUM to show that we are giving error not the program
 ; structure of project - data definitions, top-down function approaches, test cases
 
@@ -56,6 +56,7 @@
     [(AppC f args) (AppC f (map (λ ([a : ExprC]) (subst a var val)) args))]
     [_ (error 'subst "QTUM: unhandled case")]))
 
+
 ; Interpreter for ArithC
 (define (interp [expr : ExprC] [fun_defs : (Listof FunDefC)]) : Real
   (match expr
@@ -97,33 +98,34 @@
     ))
 
 (check-equal? (interp (parse '{+ 1 2}) '()) 3)
+(check-equal? (interp (parse '{* 1 2}) '()) 2)
 (check-equal? (parse 'x) (IdC 'x))
 
+
 ; lookup-fun will find the function and substitute appropriately
-(: lookup-fun ((Listof FunDefC) Symbol -> FunDefC))
-(define (lookup-fun funs the-name)
+(define (lookup-fun [funs : (Listof FunDefC)] [fun-name : Symbol]) : FunDefC
   (match funs
-    ['() (error 'lookup-fun "QTUM: undefined function ~a" the-name)]
+    ['() (error 'lookup-fun "QTUM: undefined function ~a" fun-name)]
     [(cons fd rest)
-     (if (eq? (FunDefC-name fd) the-name)
+     (if (eq? (FunDefC-name fd) fun-name)
          fd
-         (lookup-fun rest the-name))]))
+         (lookup-fun rest fun-name))]))
 
 
-; 
+; converts raw function def into structured definition
 (define (parse-fundef [prog : Sexp]) : FunDefC
   (match prog
-    ;; {fun  name  param ...  {body}}
+    ; structure being looked for - {fun  name  param ...  {body}}
     [(list 'fun (? symbol? name) params ... body)
 
-     ;; turn raw params into a (Listof Symbol)
+     ; ensures parameters are valid symbol
      (define ps
        (for/list : (Listof Symbol) ([p (in-list params)])
          (if (symbol? p)
              (cast p Symbol)
              (error 'parse-fundef "QTUM: parameter not symbol ~e" p))))
 
-     ;; duplicate-check with a typed hash
+     ; ensure no duplicates with hash
      (define seen (cast (make-hash) (HashTable Symbol Boolean)))
      (for ([p (in-list ps)])
        (when (hash-ref seen p #f)
@@ -131,23 +133,33 @@
                 "QTUM: duplicate parameter in definition of ~a" name))
        (hash-set! seen p #t))
 
+     ; build FunDefC by turning body into bunch of ExprC
      (FunDefC name ps (parse body))]
 
+    ; function format is incorrect...might need more checks?
     [_ (error 'parse-fundef "QTUM: bad function syntax ~e" prog)]))
 
-;
+
+; turns list of "fun" blocks into structured FunDefC
 (define (parse-prog [prog : (Listof Sexp)]) : (Listof FunDefC)
   (map parse-fundef prog))
 
-;
+
+; run main and get an actual value
 (define (interp-fns [funs : (Listof FunDefC)]) : Real
   (define main-fn (lookup-fun funs 'main))
   (unless (empty? (FunDefC-params main-fn))
     (error 'interp-fns "QTUM: main must take zero parameters"))
   (interp (FunDefC-body main-fn) funs))
 
+
 ; top-interp takes in Sexp, calls parser and interp
 (define (top-interp [prog-sexps : (Listof Sexp)]): Real
   (interp-fns (parse-prog prog-sexps)))
+
+
+
+
+
 
 
