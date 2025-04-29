@@ -81,8 +81,7 @@
                                    (subst th  var val)
                                    (subst el  var val))]
     [(AppC f args)          (AppC f (map (λ ([a : ExprC]) (subst a var val))
-                                         args))]
-    [_ (error 'subst "QTUM: unhandled case")]))
+                                         args))]))
 
 
 ; Interpreter for ArithC
@@ -304,3 +303,23 @@
 ;; main with parameters – should fail
 (check-exn #px"QTUM"
            (λ () (top-interp '{{fun main x {+ x 1}}})))
+
+;; unknown binary operator  →  interp must complain
+(check-exn #px"QTUM"
+  (λ () (interp (BinOpC '^^ (NumC 1) (NumC 2)) '())))
+
+;; parameter that is NOT a symbol  →  parse-fundef must complain
+(check-exn #px"QTUM"
+  (λ () (parse-fundef '{fun bad 42 {+ 1 1}})))
+
+;; stray empty list in parameter position  →  parse-fundef must complain
+(check-exn #px"QTUM"
+  (λ () (parse-fundef '{fun bad () {+ 1 1}})))
+
+;; interp – free identifier
+(check-exn #px"QTUM"
+  (λ () (interp (IdC 'ghost) '())))
+
+;; parse-fundef – totally malformed syntax
+(check-exn #px"QTUM"
+  (λ () (parse-fundef '{fun})))
