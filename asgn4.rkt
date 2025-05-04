@@ -5,9 +5,10 @@
 ; This assignment is not yet completed
 
 ; Define ExprC lang
-(define-type ExprC (U NumC IdC AppC IfLeC BinOpC))
-(struct IdC ([s : Symbol]) #:transparent)                        
-(struct AppC ([fun : Symbol] [args : (Listof ExprC)]) #:transparent)
+(define-type ExprC (U NumC IdC AppC IfLeC BinOpC LamC))
+(struct IdC ([s : Symbol]) #:transparent)
+(struct LamC ([params : (Listof Symbol)] [body : ExprC]) #:transparent)
+(struct AppC ([fun : ExprC] [args : (Listof ExprC)]) #:transparent)
 (struct IfLeC ([test : ExprC] [th : ExprC] [el : ExprC]) #:transparent)
 (struct BinOpC ([op : Symbol] [l : ExprC] [r : ExprC]) #:transparent)
 (struct NumC ([n : Real]) #:transparent)
@@ -196,33 +197,25 @@
                      (interp then fun_defs env)
                      (interp else fun_defs env))]
        [_ (error 'interp "QTUM: ifleq0? test not a number")])]
-    [(AppC fname arg-exprs)
-     ;; find the function definition
-     (define fd (lookup-fun fun_defs fname))
-     (define params (FunDefC-params fd))
-     (define body   (FunDefC-body fd))
+    [(AppC fun-expr arg-exprs)
+     ;; evaluate operator and operands
+     (define fun-val (interp fun-expr fun_defs env))
+     (define arg-vals (map (lambda ([e : ExprC]) (interp e fun_defs env)) arg-exprs))
 
-      ;; arity check
-     (when (not (= (length params) (length arg-exprs)))
-       (error 'interp "QTUM: wrong number of args"))
+     (match fun-val
+       [(CloV params body clo-env)
+        (when (not (= (length params) (length arg-vals)))
+          (error 'interp "QTUM: wrong number of args"))
+        (define new-env
+          (append (map make-binding params arg-vals) clo-env))
+        (interp body fun_defs new-env)]
 
-     ;; evaluate actual arguments in the *current* environment
-     (define arg-vals
-       (map (lambda ([e : ExprC]) (interp e fun_defs env)) arg-exprs))
-     
-     ;; build new bindings and extend the environment *safely*
-     (define new-bindings : (Listof Binding)
-       (map make-binding params arg-vals))
+       [(PrimOpV _ impl) (impl arg-vals)]
 
-     (define extended-env : Env
-       (foldr (λ ([b : Binding] [acc : Env]) : Env (cons b acc))
-              env
-              new-bindings))
-
-     (interp body fun_defs extended-env)]
-    
+       [_ (error 'interp "QTUM: attempted to call a non-function")])]
+    [(LamC ps body) (CloV ps body env)]
      ;; build a fresh environment that extends the current one
-    [(IdC s) (lookup-env env s)]))
+   [(IdC s) (lookup-env env s)]))
 
  ; lookup-fun finds func and substitues
 (define (lookup-fun [funs : (Listof FunDefC)] [fun-name : Symbol]) : FunDefC
@@ -239,18 +232,43 @@
 
 ; this is the lab 3 parse function
 ; parser for ArithC, mapping Sexp to ExprC
-(define (parse [prog : Sexp]) : ExprC
-  (match prog
+(define (parse [sexp : Sexp]) : ExprC
+  (match sexp
+    ;; numeric literal
     [(? real? n) (NumC n)]
+
+    ;; lambda literal   {(x y) => e}
+    [(list (list params ...) '=> body0)
+     (define ps : (Listof Symbol) (map validate-param params))
+     ;; duplicate-param check
+     (define seen (cast (make-hash) (HashTable Symbol Boolean)))
+     (for ([p (in-list ps)])
+       (when (hash-ref seen p #f)
+         (error 'parse "QTUM: duplicate parameter ~a" p))
+       (hash-set! seen p #t))
+     (LamC ps (parse body0))]
+
+    ;; ifleq0? special form
     [(list 'ifleq0? t th el)
      (IfLeC (parse t) (parse th) (parse el))]
-    [(list (? symbol? sym) args ...)
+
+    ;; any non-empty list ⇒  application or bin-op
+    [(list f0 rest ...)
      (cond
-       [(and (hash-has-key? binop-table sym) (= (length args) 2))
-        (BinOpC sym (parse (first args)) (parse (second args)))]
+       ;; binary operator in prefix notation  {+ e1 e2}
+       [(and (symbol? f0)
+             (hash-has-key? binop-table f0)
+             (= (length rest) 2))
+        (BinOpC f0 (parse (first rest)) (parse (second rest)))]
+
+       ;; otherwise: regular application
        [else
-        (AppC sym (map parse args))])]
+        (AppC (parse f0) (map parse rest))])]
+
+    ;; identifier
     [(? symbol? s) (IdC s)]
+
+    ;; anything else ⇒ error
     [other (error 'parse "QTUM: incorrect syntax, got ~e" other)]))
 
 
@@ -278,61 +296,46 @@
          (BinOpC '- (IdC 'z) (NumC 1))))
 
 
+;; ------------------------------------------------------------------
+;;  PARSING
+;; ------------------------------------------------------------------
+(check-equal? (parse 3.5)              (NumC 3.5))
+(check-equal? (parse 'v)               (IdC 'v))
+(check-equal? (parse '{+ 1 2})         (BinOpC '+ (NumC 1) (NumC 2)))
+;(check-exn     #px"QTUM" (λ () (parse '((1 2) 3))))
 
 ;; ------------------------------------------------------------------
-;;  PARSING  — unchanged
+;;  INTERPRETER  (primitive / user-defined) --------------------------
 ;; ------------------------------------------------------------------
-(check-equal? (parse 3.5)          (NumC 3.5))
-(check-equal? (parse 'v)           (IdC 'v))
-(check-equal? (parse '{+ 1 2})     (BinOpC '+ (NumC 1) (NumC 2)))
-(check-exn     #px"QTUM" (λ () (parse '((1 2) 3))))
+(check-equal? (interp (parse '{+ 1 2}) '() top-env) (NumV 3))
+(check-equal? (interp (parse '{* 1 2}) '() top-env) (NumV 2))
 
-;; ------------------------------------------------------------------
-;;  INTERPRETER  (unit-level) — now run with top-env + expect Value
-;; ------------------------------------------------------------------
-;; primitive +, * via BinOpC
-(check-equal? (interp (parse '{+ 1 2})
-                      '()                   ; no user fun-defs
-                      top-env)              ; <-- prim-op env
-              (NumV 3))
-
-(check-equal? (interp (parse '{* 1 2}) '() top-env)
-              (NumV 2))
-
-;; direct BinOpC syntax node
-(check-equal? (interp (BinOpC '- (NumC 7) (NumC 2))
-                      '()
-                      top-env)
+(check-equal? (interp (BinOpC '- (NumC 7) (NumC 2)) '() top-env)
               (NumV 5))
 
-;; ifleq0?
-(check-equal? (interp (IfLeC (NumC 1) (NumC 9) (NumC 8))
-                      '()
-                      top-env)
+(check-equal? (interp (IfLeC (NumC 1) (NumC 9) (NumC 8)) '() top-env)
               (NumV 8))
 
-;; call to user-defined inc (needs both fun-defs *and* prim-op env)
-(check-equal? (interp (AppC 'inc (list (NumC 10)))
+;; user-defined inc
+(check-equal? (interp (AppC (IdC 'inc) (list (NumC 10)))
                       (list fd-inc fd-main-0)
                       top-env)
               (NumV 11))
 
 (check-exn #px"QTUM"
-  (λ () (interp (AppC 'inc (list (NumC 1) (NumC 2)))
+  (λ () (interp (AppC (IdC 'inc) (list (NumC 1) (NumC 2)))
                 (list fd-inc fd-main-0)
                 top-env)))
 
 ;; ------------------------------------------------------------------
 ;;  HIGH-LEVEL DRIVER TESTS
 ;; ------------------------------------------------------------------
-;; interp-fns now returns a Value
 (check-equal? (interp-fns
                (parse-prog
                 '{{fun fact n {ifleq0? n 1 {* n {fact {- n 1}}}}}
                   {fun main     {fact 5}}}))
               (NumV 120))
 
-;; top-interp gives back a *string* (serialize applied)
 (check-equal? (top-interp
                '{{fun add   a b {+ a b}}
                  {fun triple t {* 3 t}}
@@ -340,8 +343,21 @@
               "13")
 
 ;; ------------------------------------------------------------------
-;;  FUNCTION LOOK-UP (still unchanged)
+;;  FUNCTION LOOK-UP
 ;; ------------------------------------------------------------------
 (check-equal? (lookup-fun (list fd-add fd-main-0) 'add) fd-add)
 (check-exn     #px"QTUM"
   (λ () (lookup-fun (list fd-add) 'absent)))
+
+;; ------------------------------------------------------------------
+;;  NEW  higher-order  LAMBDA  tests
+;; ------------------------------------------------------------------
+(check-equal? (top-interp '{ {(x) => {+ x 1}} 5 }) "6")
+
+(check-equal? (top-interp
+               '{ {{(x) => {(y) => {+ x y}}} 3} 4 })
+              "7")
+
+(check-equal? (top-interp
+               '{ {(h) => {h 8}} {(x) => {+ x 1}} })
+              "9")
