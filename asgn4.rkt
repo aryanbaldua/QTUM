@@ -2,17 +2,17 @@
 (require typed/rackunit)
 
 ; Assignment by Aryan Baldua and Sathvik Chikala
-; This assignment is not yet completed
+; This assignment is completed and has 100% test case coverage
 
 ; Define ExprC lang
-(define-type ExprC (U NumC IdC AppC IfLeC BinOpC LamC))
+(define-type ExprC (U NumC IdC AppC LamC StringC IfC WithC))
 (struct IdC ([s : Symbol]) #:transparent)
 (struct LamC ([params : (Listof Symbol)] [body : ExprC]) #:transparent)
 (struct AppC ([fun : ExprC] [args : (Listof ExprC)]) #:transparent)
-(struct IfLeC ([test : ExprC] [th : ExprC] [el : ExprC]) #:transparent)
-(struct BinOpC ([op : Symbol] [l : ExprC] [r : ExprC]) #:transparent)
 (struct NumC ([n : Real]) #:transparent)
-(struct FunDefC ([name : Symbol] [params : (Listof Symbol)] [body : ExprC]) #:transparent)
+(struct StringC ([s : String]) #:transparent)
+(struct IfC ([test : ExprC] [then : ExprC] [else : ExprC]) #:transparent)
+(struct WithC ([bindings : (Listof (Pairof Symbol ExprC))] [body : ExprC])  #:transparent)
 
 
 (define-type Value (U NumV BoolV StringV CloV PrimOpV))
@@ -23,10 +23,12 @@
 (struct PrimOpV  ([name : Symbol] [impl : (-> (Listof Value) Value)]) #:transparent)
 
 
+; symbol value pairings
 (define-type Binding (Pairof Symbol Value))
 (define-type Env (Listof Binding))
 
 
+; takes a value and converts it into string representation
 (define (serialize [v : Value]) : String
   (match v
     [(NumV  n) (~v n)]                    
@@ -37,51 +39,62 @@
 
 
 ;*********************ALL PRIM OPS***************************
+; takes in two numbers and adds them together
 (define (add-prim [args : (Listof Value)]) : Value
   (match args
     [(list (NumV a) (NumV b)) (NumV (+ a b))]
-    [_ (error 'add-prim "QTUM: + expects two numbers")]))
+    [_ (error 'add-prim "QTUM: adding expects two numbers")]))
 
 
+; takes in two numbers and subtracts second one from first
 (define (sub-prim [args : (Listof Value)]) : Value
   (match args
     [(list (NumV a) (NumV b)) (NumV (- a b))]
-    [_ (error 'sub-prim "QTUM: - expects two numbers")]))
+    [_ (error 'sub-prim "QTUM: subtract needs 2 numbers")]))
 
 
+; takes in two numbers and multiplies both the numbers
 (define (mul-prim [args : (Listof Value)]) : Value
   (match args
     [(list (NumV a) (NumV b)) (NumV (* a b))]
-    [_ (error 'mul-prim "QTUM: * expects two numbers")]))
+    [_ (error 'mul-prim "QTUM: multiplying needs 2 numbers")]))
 
 
+; takes in two numbers and divides first one by second, takes care of divide by 0 case
 (define (div-prim [args : (Listof Value)]) : Value
   (match args
     [(list (NumV _) (NumV 0))
-     (error 'div-prim "QTUM: / division by zero")]
+     (error 'div-prim "QTUM: cannot divide by 0")]
     [(list (NumV a) (NumV b)) (NumV (/ a b))]
-    [_ (error 'div-prim "QTUM: / expects two numbers")]))
+    [_ (error 'div-prim "QTUM: division needs 2 numbers")]))
 
 
+; takes in two numbers and returns true if first number is larger
 (define (leq-prim [args : (Listof Value)]) : Value
   (match args
     [(list (NumV a) (NumV b)) (BoolV (<= a b))]
-    [_ (error 'leq-prim "QTUM: <= expects two numbers")]))
+    [_ (error 'leq-prim "QTUM: leq-prim needs 2 numbers")]))
 
 
-(define (equalQ-prim [args : (Listof Value)]) : Value
-  (match args
-    [(list (NumV a)    (NumV b))    (BoolV (= a b))]
-    [(list (BoolV a)   (BoolV b))   (BoolV (eq? a b))]
-    [(list (StringV a) (StringV b)) (BoolV (equal? a b))]
-    [_ (BoolV #f)]))                       ; closures & primops ⇒ false
+; takes in two values and returns true if the values are equal (same type)
+(define (equal?-prim [args : (Listof Value)]) : Value
+  (if (= (length args) 2)
+      (match args
+        [(list (NumV n1)    (NumV n2))    (BoolV (= n1 n2))]
+        [(list (BoolV b1)   (BoolV b2))   (BoolV (eq? b1 b2))]
+        [(list (StringV s1) (StringV s2)) (BoolV (equal? s1 s2))]
+        ;; two values but different kinds or closures/primops
+        [(list _ _) (BoolV #f)])
+      (error 'equal?-prim "QTUM equal? needs 2 numbers")))
 
 
+; takes in a list and returns the length of it
 (define (strlen-prim [args : (Listof Value)]) : Value
   (match args
     [(list (StringV s)) (NumV (string-length s))]
-    [_ (error 'strlen-prim "QTUM: strlen expects one string")]))
+    [_ (error 'strlen-prim "QTUM: strlen needs only 1 str")]))
 
+; takes in a string and two numbers and returns the string within the indexes of the numbers
 (define (substring-prim [args : (Listof Value)]) : Value
   (match args
     [(list (StringV s) (NumV st) (NumV sp))
@@ -92,272 +105,275 @@
         (define isp (cast sp Integer))
         (StringV (substring s ist isp))]
        [else
-        (error 'substring-prim "QTUM: substring index error")])]
+        (error 'substring-prim "QTUM: string indexing gone wrong")])]
     [_ (error 'substring-prim
-              "QTUM: substring expects (string num num)")]))
+              "QTUM: substring needs 1 string and 2 numbers in that order")]))
 
 
+; takes in list and returns errors if there is more than 1 argument
 (define (user-error-prim [args : (Listof Value)]) : Nothing
   (match args
     [(list v)
      (error 'user-error-prim
-            (string-append "QTUM user-error: " (serialize v)))]
+            (string-append "QTUM user error: " (serialize v)))]
     [_ (error 'user-error-prim
-              "QTUM: error expects exactly one argument")]))
+              "QTUM: error needs only one argument")]))
 
 ;********************END PRIM OPS***************************
 
+; takes in a symbol and a value and returns the binding which is the symbol-value pair
 (: make-binding (-> Symbol Value Binding))
 (define (make-binding [k : Symbol] [v : Value]): Binding
   (cons k v))
 
+
+; allows interpreter to know what each of the basic things (+, -) do by keeping track of it
+; in the global scope
 (define top-env
-  (list (make-binding '+      (PrimOpV '+ add-prim))
-        (make-binding '-      (PrimOpV '- sub-prim))
-        (make-binding '*      (PrimOpV '* mul-prim))
-        (make-binding '/      (PrimOpV '/ div-prim))
-        (make-binding '<=     (PrimOpV '<= leq-prim))
-        (make-binding 'equal? (PrimOpV 'equal? equalQ-prim))
+  (list (make-binding '+ (PrimOpV '+ add-prim))
+        (make-binding '- (PrimOpV '- sub-prim))
+        (make-binding '* (PrimOpV '* mul-prim))
+        (make-binding '/ (PrimOpV '/ div-prim))
+        (make-binding '<=  (PrimOpV '<= leq-prim))
+        (make-binding 'equal? (PrimOpV 'equal? equal?-prim))
         (make-binding 'strlen (PrimOpV 'strlen strlen-prim))
         (make-binding 'substring (PrimOpV 'substring substring-prim))
         (make-binding 'error  (PrimOpV 'error user-error-prim))
         (make-binding 'true   (BoolV #t))
         (make-binding 'false  (BoolV #f))))
 
+
+
+; takes in an Sexp and converts into the appropriate ExprC format
+(define (parse [sexp : Sexp]) : ExprC
+  (match sexp
+    [(? real? n) (NumC n)]
+    
+    [(? string? str) (StringC str)]
+
+    [(? symbol? s)
+     (when (member s '(if with => =))
+       (error 'parse "QTUM: cannot use this word, already an identifier: ~a" s))
+     (IdC s)]
+
+    [(list 'if t e1 e2)
+     (IfC (parse t) (parse e1) (parse e2))]
+
+     [(list (list params ...) '=> body0)
+     (define ps (map validate-param params))
+     (when (has-duplicates ps)
+       (error 'parse "QTUM: dup param naming ~a" ps))
+     (LamC ps (parse body0))]
+
+
+    [(list 'with bindings ... body0)
+     (define parsed
+       (map (λ ([b : Sexp]) : (Pairof Symbol ExprC)
+              (match b
+                [(list (? symbol? v) '= rhs)
+                 (cons (cast v Symbol) (parse rhs))]
+                [_ (error 'parse "QTUM: binding gone wrong ~a" b)]))
+            (cast bindings (Listof Sexp))))
+
+     (define names
+       (map (λ ([p : (Pairof Symbol ExprC)]) : Symbol
+              (car p))
+            parsed))
+
+     (when (has-duplicates names)
+       (error 'parse "QTUM: dup names ~a" names))
+
+     (define rhss
+       (map (λ ([p : (Pairof Symbol ExprC)]) : ExprC
+              (cdr p))
+            parsed))
+     
+     (AppC (LamC names (parse body0)) rhss)]
+
+    [(list f0 args ...)
+     (AppC (parse f0)
+           (map (λ ([a : Sexp]) : ExprC (parse a)) args))]
+
+    [other (error 'parse "QTUM: syntax error? ~e" other)]))
+
+
 ; takes in user input and actually returns the final output
-(define (top-interp [prog-sexps : (Listof Sexp)]) : String
-  (serialize (interp-fns (parse-prog prog-sexps))))
+(define (top-interp [s : Sexp]) : String
+  (serialize (interp (parse s) top-env)))
 
 
-; run main and get an actual value
-(define (interp-fns [funs : (Listof FunDefC)]) : Value
-  (define main-fn (lookup-fun funs 'main))
-  (unless (empty? (FunDefC-params main-fn))
-    (error 'interp-fns "QTUM: main must take zero parameters"))
-  (interp (FunDefC-body main-fn) funs top-env))
-
-
-; turns list into structured fun defs
-(define (parse-prog [prog : (Listof Sexp)]) : (Listof FunDefC)
-  (define funs (map parse-fundef prog))
-  (define seen (cast (make-hash) (HashTable Symbol Boolean)))
-  (for ([fd (in-list funs)])
-    (define nm (FunDefC-name fd))
-    (when (hash-ref seen nm #f)
-      (error 'parse-prog "QTUM: duplicate function name ~a" nm))
-    (hash-set! seen nm #t))
-  (unless (hash-has-key? seen 'main)
-    (error 'parse-prog "QTUM: program must contain a main function"))
-  funs)
-
-
-; helper to return validate a param
-(define (parse-fundef [prog : Sexp]) : FunDefC
-  (match prog
-    [(list 'fun (? symbol? name) params ... body)
-     (when (hash-has-key? binop-table name)
-       (error 'parse-fundef
-              "QTUM: function name ~a collides with binary operator" name))
-     (define ps : (Listof Symbol)
-       (map validate-param params))
-     (define seen (cast (make-hash) (HashTable Symbol Boolean)))
-     (for ([p (in-list ps)])
-       (when (hash-ref seen p #f)
-         (error 'parse-fundef
-                "QTUM: duplicate parameter in definition of ~a" name))
-       (hash-set! seen p #t))
-     (FunDefC name ps (parse body))]
-    [_ (error 'parse-fundef "QTUM: bad function syntax ~e" prog)]))
-
-; func to validate params
+; makes sure parameter is symbol
 (define (validate-param [p : Any]) : Symbol
   (cond
     [(symbol? p) (cast p Symbol)]
-    [(null? p) (error 'parse-fundef "QTUM: empty list in parameter position")]
-    [else (error 'parse-fundef "QTUM: parameter not symbol ~e" p)]))
+    [(null? p) (error 'parse-fundef "QTUM: empty list found in parameter")]
+    [else (error 'parse-fundef "QTUM: param isnt a symbol ~e" p)]))
 
 
 ; takes in an ExprC and then returns a real number after breaking it down
-(define (interp [expr : ExprC] [fun_defs : (Listof FunDefC)] [env : Env]) : Value
+(define (interp [expr : ExprC]  [env : Env]) : Value
   (match expr
     [(NumC n) (NumV n)]
-    [(BinOpC op l r)
-     (define proc (hash-ref binop-table op
-                            (lambda () (error 'interp "QTUM: operator is incorrect ~a" op))))
-     ;; You need to unwrap to Real, call proc, then wrap back
-     (define lhs (interp l fun_defs env))
-     (define rhs (interp r fun_defs env))
-     (match* (lhs rhs)
-       [((NumV n1) (NumV n2)) (NumV (proc n1 n2))]
-       [(_ _) (error 'interp "QTUM: numeric op on non-numbers")])]
-    [(IfLeC test then else)
-     (define tv (interp test fun_defs env))
-     (match tv
-       [(NumV n) (if (<= n 0)
-                     (interp then fun_defs env)
-                     (interp else fun_defs env))]
-       [_ (error 'interp "QTUM: ifleq0? test not a number")])]
-    [(AppC fun-expr arg-exprs)
-     ;; evaluate operator and operands
-     (define fun-val (interp fun-expr fun_defs env))
-     (define arg-vals (map (lambda ([e : ExprC]) (interp e fun_defs env)) arg-exprs))
 
+    [(StringC s) (StringV s)]
+
+    [(IfC test then else)
+     (define tv (interp test env))
+     (match tv
+       [(BoolV b) (if b (interp then env) (interp else env))]
+       [_ (error 'interp "QTUM: non boolean value")])]
+
+    ; desugar during runtime
+    [(WithC binds body)
+     (define vars
+       (map (λ ([p : (Pairof Symbol ExprC)]) : Symbol
+              (car p))
+            binds))
+     (define exprs
+       (map (λ ([p : (Pairof Symbol ExprC)]) : ExprC
+              (cdr p))
+            binds))
+     (interp (AppC (LamC vars body) exprs) env)]
+
+    
+    [(AppC fun-expr arg-exprs)
+     (define fun-val (interp fun-expr env))
+     (define arg-vals (map (λ ([e : ExprC]) (interp e env)) arg-exprs))
      (match fun-val
        [(CloV params body clo-env)
         (when (not (= (length params) (length arg-vals)))
-          (error 'interp "QTUM: wrong number of args"))
-        (define new-env
-          (append (map make-binding params arg-vals) clo-env))
-        (interp body fun_defs new-env)]
-
+          (error 'interp "QTUM: wrong amount of args"))
+        (define new-env (append (map make-binding params arg-vals) clo-env))
+        (interp body new-env)]
        [(PrimOpV _ impl) (impl arg-vals)]
+       [_ (error 'interp "QTUM: attempt to call something that isnt a function")])]
 
-       [_ (error 'interp "QTUM: attempted to call a non-function")])]
     [(LamC ps body) (CloV ps body env)]
-     ;; build a fresh environment that extends the current one
+
    [(IdC s) (lookup-env env s)]))
 
- ; lookup-fun finds func and substitues
-(define (lookup-fun [funs : (Listof FunDefC)] [fun-name : Symbol]) : FunDefC
-  (match funs
-    ['() (error 'lookup-fun "QTUM: undefined function ~a" fun-name)]
-    [(cons fd rest) (if (eq? (FunDefC-name fd) fun-name) fd (lookup-fun rest fun-name))]))
 
-; lookup var in the curr environment
+; takes in a symbol and the current enviroment and returns the symbol value in that enviroment
 (define (lookup-env [env : Env] [x : Symbol]) : Value
   (match env
     ['() (error 'lookup-env "QTUM: unbound identifier ~a" x)]
     [(cons (cons y v) rest)
      (if (eq? x y) v (lookup-env rest x))]))
 
-; this is the lab 3 parse function
-; parser for ArithC, mapping Sexp to ExprC
-(define (parse [sexp : Sexp]) : ExprC
-  (match sexp
-    ;; numeric literal
-    [(? real? n) (NumC n)]
 
-    ;; lambda literal   {(x y) => e}
-    [(list (list params ...) '=> body0)
-     (define ps : (Listof Symbol) (map validate-param params))
-     ;; duplicate-param check
-     (define seen (cast (make-hash) (HashTable Symbol Boolean)))
-     (for ([p (in-list ps)])
-       (when (hash-ref seen p #f)
-         (error 'parse "QTUM: duplicate parameter ~a" p))
-       (hash-set! seen p #t))
-     (LamC ps (parse body0))]
-
-    ;; ifleq0? special form
-    [(list 'ifleq0? t th el)
-     (IfLeC (parse t) (parse th) (parse el))]
-
-    ;; any non-empty list ⇒  application or bin-op
-    [(list f0 rest ...)
-     (cond
-       ;; binary operator in prefix notation  {+ e1 e2}
-       [(and (symbol? f0)
-             (hash-has-key? binop-table f0)
-             (= (length rest) 2))
-        (BinOpC f0 (parse (first rest)) (parse (second rest)))]
-
-       ;; otherwise: regular application
-       [else
-        (AppC (parse f0) (map parse rest))])]
-
-    ;; identifier
-    [(? symbol? s) (IdC s)]
-
-    ;; anything else ⇒ error
-    [other (error 'parse "QTUM: incorrect syntax, got ~e" other)]))
+; takes in a list of symbols and make sure that there are no repeats
+(define (has-duplicates [syms : (Listof Symbol)]) : Boolean
+  (define seen (cast (make-hash) (HashTable Symbol Boolean)))
+  (define (check [lst : (Listof Symbol)]) : Boolean
+    (match lst
+      ['() #f]
+      [(cons s rest)
+       (if (hash-ref seen s #f) #t
+           (begin
+             (hash-set! seen s #t) (check rest)))]))
+  (check syms))
 
 
-; binop table lookup for operators
-(define binop-table : (Immutable-HashTable Symbol (Real Real -> Real))
-  (make-immutable-hash
-   (list (cons '+ +) (cons '- -) (cons '* *) (cons '/ /))))
 
+; *********** ALL TESTING ******************
 
-; just extra functions for help with test
-; adding for testing purposes
-(define fd-add
-  (FunDefC 'add '(x y) (BinOpC '+ (IdC 'x) (IdC 'y))))
+(check-exn #px"QTUM" (lambda () (top-interp '{with [x = 1] [x = 2] x})))
 
-(define fd-inc
-  (FunDefC 'inc '(n) (BinOpC '+ (IdC 'n) (NumC 1))))
+(check-equal? (top-interp '0) "0")
+(check-equal? (top-interp '{(x) => x}) "#<procedure>")
+(check-equal? (top-interp '+) "#<primop>")
+(check-equal? (top-interp 'true) "true")
+(check-equal? (top-interp 'false) "false")
 
-; acting as main just for testing purposes
-(define fd-main-0
-  (FunDefC 'main '() (NumC 0)))
+; prim operations tests
+(check-equal? (top-interp '{+ 4 5}) "9")
+(check-equal? (top-interp '{- 10 3}) "7")
+(check-equal? (top-interp '{* 2 6}) "12")
+(check-equal? (top-interp '{/ 8 2}) "4")
+(check-equal? (top-interp '{<= 3 7}) "true")
+(check-exn #px"QTUM: adding expects two numbers" (lambda () (top-interp '{+ 1})))
+(check-exn #px"QTUM: adding expects two numbers" (lambda () (top-interp '{+ 1 2 3})))
+(check-exn #px"QTUM: cannot divide by 0" (lambda () (top-interp '{/ 1 0})))
+(check-exn #px"QTUM: leq-prim needs 2 numbers" (lambda () (top-interp '{<= 1 "x"})))
 
-; helping with substitution
-(define expr-z (IfLeC (IdC 'z)
-         (BinOpC '+ (IdC 'z) (NumC 1))
-         (BinOpC '- (IdC 'z) (NumC 1))))
+; prim string tests
+(check-equal? (top-interp '{strlen "abcd"}) "4")
+(check-equal? (top-interp '{substring "hello" 1 4}) "\"ell\"")
+(check-exn #px"QTUM: strlen needs only 1 str" (lambda () (top-interp '{strlen 100})))
+(check-exn #px"QTUM: strlen needs only 1 str" (lambda () (top-interp '{strlen "a" "b"})))
+(check-exn #px"QTUM: string indexing gone wrong" (lambda () (top-interp '{substring "abc" 0 5})))
+(check-exn #px"QTUM: string indexing gone wrong" (lambda () (top-interp '{substring "abc" 2 1})))
+(check-exn #px"QTUM: substring needs 1 string and 2 numbers in that order" (lambda () (top-interp '{substring 99 0 1})))
 
+; equal? tests
+(check-equal? (top-interp '{equal? 3 3}) "true")
+(check-equal? (top-interp '{equal? true true}) "true")
+(check-equal? (top-interp '{equal? "a" "b"}) "false")
+(check-equal? (top-interp '{equal? + +}) "false")
+(check-equal? (top-interp '{equal? {(x) => x} {(y) => y}}) "false")
+(check-exn #px"QTUM equal\\? needs 2 numbers" (lambda () (top-interp '{equal? 1})))
 
-;; ------------------------------------------------------------------
-;;  PARSING
-;; ------------------------------------------------------------------
-(check-equal? (parse 3.5)              (NumC 3.5))
-(check-equal? (parse 'v)               (IdC 'v))
-(check-equal? (parse '{+ 1 2})         (BinOpC '+ (NumC 1) (NumC 2)))
-;(check-exn     #px"QTUM" (λ () (parse '((1 2) 3))))
+; prim error tests
+(check-exn #px"QTUM user error" (lambda () (top-interp '{error "boom"})))
+(check-exn #px"QTUM: error needs only one argument" (lambda () (top-interp '{error 1 2})))
 
-;; ------------------------------------------------------------------
-;;  INTERPRETER  (primitive / user-defined) --------------------------
-;; ------------------------------------------------------------------
-(check-equal? (interp (parse '{+ 1 2}) '() top-env) (NumV 3))
-(check-equal? (interp (parse '{* 1 2}) '() top-env) (NumV 2))
+; if tests
+(check-equal? (top-interp '{if true 1 0}) "1")
+(check-equal? (top-interp '{if false 1 0}) "0")
+(check-exn #px"QTUM" (lambda () (top-interp '{if 5 1 0})))
 
-(check-equal? (interp (BinOpC '- (NumC 7) (NumC 2)) '() top-env)
-              (NumV 5))
+; with tests
+(check-equal? (top-interp '{with [x = 3] [y = 4] {+ x y}}) "7")
+(check-equal? (top-interp '{with [x = 1] {with [x = 5] {+ x 2}}}) "7")
+(check-exn #px"QTUM" (lambda () (top-interp '{with [x = 1] [x = 2] x})))
+(check-exn #px"QTUM" (lambda () (top-interp '{with [x 1] x})))
 
-(check-equal? (interp (IfLeC (NumC 1) (NumC 9) (NumC 8)) '() top-env)
-              (NumV 8))
+; sub-prim
+(check-exn #px"QTUM: subtract needs 2 numbers" (lambda () (top-interp '{- 5 "a"})))
+(check-exn #px"QTUM: subtract needs 2 numbers" (lambda () (top-interp '{- 5})))
 
-;; user-defined inc
-(check-equal? (interp (AppC (IdC 'inc) (list (NumC 10)))
-                      (list fd-inc fd-main-0)
-                      top-env)
-              (NumV 11))
+; mul-prim
+(check-exn #px"QTUM: multiplying needs 2 numbers" (lambda () (top-interp '{* "a" 4})))
+(check-exn #px"QTUM: multiplying needs 2 numbers" (lambda () (top-interp '{* 1 2 3})))
 
-(check-exn #px"QTUM"
-  (λ () (interp (AppC (IdC 'inc) (list (NumC 1) (NumC 2)))
-                (list fd-inc fd-main-0)
-                top-env)))
+; div-prim
+(check-exn #px"QTUM: cannot divide by 0" (lambda () (top-interp '{/ 7 0})))
+(check-exn #px"QTUM: division needs 2 numbers" (lambda () (top-interp '{/ 7 "b"})))
 
-;; ------------------------------------------------------------------
-;;  HIGH-LEVEL DRIVER TESTS
-;; ------------------------------------------------------------------
-(check-equal? (interp-fns
-               (parse-prog
-                '{{fun fact n {ifleq0? n 1 {* n {fact {- n 1}}}}}
-                  {fun main     {fact 5}}}))
-              (NumV 120))
+(check-equal? (top-interp '{{(x) => {+ x 1}} 8}) "9")
+(check-equal? (top-interp '{with [inc = {(x) => {+ x 1}}] {inc 10}}) "11")
+(check-equal? (top-interp '{{{(x) => {(y) => {+ x y}}} 3} 4}) "7")
+(check-equal? (top-interp '{ {(f) => {f 6}} {(z) => {+ z 2}} }) "8")
+(check-exn #px"QTUM" (lambda () (top-interp '{{(x) => x} 1 2})))
+(check-exn #px"QTUM" (lambda () (top-interp '{5 1 2})))
 
-(check-equal? (top-interp
-               '{{fun add   a b {+ a b}}
-                 {fun triple t {* 3 t}}
-                 {fun main      {add {triple 3} 4}}})
-              "13")
+(check-exn #px"QTUM" (lambda () (top-interp 'undefined-symbol)))
 
-;; ------------------------------------------------------------------
-;;  FUNCTION LOOK-UP
-;; ------------------------------------------------------------------
-(check-equal? (lookup-fun (list fd-add fd-main-0) 'add) fd-add)
-(check-exn     #px"QTUM"
-  (λ () (lookup-fun (list fd-add) 'absent)))
+; parser edge cases
+(check-exn #px"QTUM" (lambda () (top-interp 'if)))
+(check-exn #px"QTUM" (lambda () (top-interp '{{x x} => x})))
+(check-exn #px"QTUM" (lambda () (top-interp '{})))
 
-;; ------------------------------------------------------------------
-;;  NEW  higher-order  LAMBDA  tests
-;; ------------------------------------------------------------------
-(check-equal? (top-interp '{ {(x) => {+ x 1}} 5 }) "6")
+; parameter validation tests
+(check-exn #px"QTUM: empty list found in parameter" (lambda () (top-interp '{((x ()) => x)})))
+(check-exn #px"QTUM: param isnt a symbol" (lambda () (top-interp '{((x 5) => x)})))
 
-(check-equal? (top-interp
-               '{ {{(x) => {(y) => {+ x y}}} 3} 4 })
-              "7")
+; testing Asts without parser
+(define (run-ast [e : ExprC]) : String
+  (serialize (interp e top-env)))
 
-(check-equal? (top-interp
-               '{ {(h) => {h 8}} {(x) => {+ x 1}} })
-              "9")
+(define ast-with-single
+  (WithC
+   (list (cons 'x (NumC 3)))
+   (AppC (IdC '+) (list (IdC 'x) (NumC 4)))))
+(check-equal? (run-ast ast-with-single) "7")
+
+(define ast-with-multi
+  (WithC
+   (list (cons 'a (NumC 2)) (cons 'b (NumC 5)))
+   (AppC (IdC '+) (list (IdC 'a) (IdC 'b)))))
+(check-equal? (run-ast ast-with-multi) "7")
+
+; has-duplicates
+(check-equal? (has-duplicates (list 'a 'b 'a)) #t)
+(check-equal? (has-duplicates (list 'x 'y 'z)) #f)
