@@ -187,7 +187,6 @@
         [(list (NumV n1)    (NumV n2))    (BoolV (= n1 n2))]
         [(list (BoolV b1)   (BoolV b2))   (BoolV (eq? b1 b2))]
         [(list (StringV s1) (StringV s2)) (BoolV (equal? s1 s2))]
-        ;; two values but different kinds or closures/primops
         [(list _ _) (BoolV #f)])
       (error 'equal?-prim "QTUM equal? needs 2 numbers")))
 
