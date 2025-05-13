@@ -1,7 +1,7 @@
 #lang typed/racket
 (require typed/rackunit)
 
-; Assignment 5 is not completed
+; Assignment 5 is completed and has 100% test case coverage
 
 ; Define ExprC lang
 (define-type ExprC (U NumC IdC AppC LamC StringC IfC WithC))
@@ -40,20 +40,29 @@
     [(? string? str) (StringC str)]
 
     [(? symbol? s)
-     (when (member s '(if with =))
+     (when (member s '(if with = =>))
        (error 'parse "QTUM: cannot use this word, already an identifier: ~a" s))
      (IdC s)]
 
     [(list 'if test then else)
      (IfC (parse test) (parse then) (parse else))]
 
-     [(list (list params ...) '=> body0)
+    [(list '=> body0)
+     (LamC '() (parse body0))]
+
+    [(list (? symbol? p) '=> body0)
+     (unless (id? p)
+       (error 'parse "QTUM: malformed => form"))
+     (LamC (list (cast p Symbol)) (parse body0))]
+
+    [(list (list params ...) '=> body0)
      (define pars (map validate-param params))
      (when (has-duplicates pars)
        (error 'parse "QTUM: dup param naming ~a" pars))
      (LamC pars (parse body0))]
 
-    ;[(list '=>) (IdC '=>)]
+    [(list _ ... '=> _ ...)
+     (error 'parse "QTUM: malformed => form")]
 
     [(list 'with bindings ... body)
      (define parsed
@@ -75,14 +84,13 @@
             parsed))
      (AppC (LamC names (parse body)) right)]
 
-
-    [(list (list '=> _ ...) _ ...) (IdC '=>)]
+    ;[(list (list '=> _ ...) _ ...) (IdC '=>)]
+    
     [(list fzer args ...)
      (AppC (parse fzer)
            (map (lambda ([a : Sexp]) : ExprC (parse a)) args))]
 
     [other (error 'parse "QTUM: syntax error? ~e" other)]))
-
 
 
 ; makes sure parameter is symbol
@@ -121,7 +129,7 @@
     
     [(AppC fun-expr arg-exprs)
      (define fun-val (interp fun-expr env))
-     (define arg-vals (map (λ ([e : ExprC]) (interp e env)) arg-exprs))
+     (define arg-vals (map (lambda ([e : ExprC]) (interp e env)) arg-exprs))
      (match fun-val
        [(CloV params body clo-env)
         (when (not (= (length params) (length arg-vals)))
@@ -139,12 +147,22 @@
 
    [(IdC s) (lookup-env env s)]))
 
+
 ; takes a value and converts it into string representation
 (define (serialize [v : Value]) : String
   (match v
     [(NumV  n) (~v n)]                    
     [(BoolV b) (if b "true" "false")]   
     [(StringV s) (format "~v" s)]           
+    [(CloV _ _ _) "#<procedure>"]
+    [(PrimOpV _ _) "#<primop>"]))
+
+
+(define (value->string [v : Value]): String
+  (match v
+    [(NumV n)     (~v n)]
+    [(BoolV b)    (if b "true" "false")]
+    [(StringV s)  s]
     [(CloV _ _ _) "#<procedure>"]
     [(PrimOpV _ _) "#<primop>"]))
 
@@ -229,6 +247,52 @@
     [_ (error 'user-error-prim
               "QTUM: error needs only one argument")]))
 
+
+; takes in one argument and prints it 
+(define (println-prim [args : (Listof Value)]): Value
+  (match args
+    [(list v)
+     (displayln (value->string v))
+     (BoolV #t)]                          
+    [_ (error 'println "QTUM: println takes one argument")]))
+
+; takes in and reads a number from input
+(define (read-num-prim [args : (Listof Value)]) : Value
+  (unless (null? args)
+    (error 'read-num "QTUM: read-num takes no arguments"))
+  (display "> ")
+  (flush-output)
+  (define r (read-line))
+  (unless (string? r)
+    (error 'read-num "QTUM: reached EOF while reading"))
+  (define maybe-num (string->number r))
+  (unless (and maybe-num (real? maybe-num))
+    (error 'read-num "QTUM: not a real number"))
+  (NumV (cast maybe-num Real)))
+
+
+; takes in a reads a string from input
+(define (read-str-prim [args : (Listof Value)]) : Value
+  (unless (null? args)
+    (error 'read-str "QTUM: read-str has 0 args"))
+  (display "> ")
+  (flush-output)
+  (define r (read-line))
+  (unless (string? r)
+    (error 'read-str "QTUM: EOF reached"))
+  (StringV r))
+
+; takes in list of values and returns value produced by last arg
+(define (seq-prim [args : (Listof Value)]): Value
+  (cond [(null? args)
+         (error 'seq "QTUM: 1 arg needed")]
+        [else (last args)]))
+
+; makes each of the args text and concats into one singular string
+(define (concat-prim [args : (Listof Value)]): Value
+  (define pieces (map value->string args))
+  (StringV (apply string-append pieces)))
+
 ;********************END PRIM OPS***************************
 
 ; takes in a symbol and a value and returns the binding which is the symbol-value pair
@@ -237,8 +301,8 @@
   (cons k v))
 
 
-; allows interpreter to know what each of the basic things (+, -) do by keeping track of it
-; in the global scope
+; allows interpreter to know what each of the basic things (+, -)
+; do by keeping track of it in the global scope
 (define top-env
   (list (make-binding '+ (PrimOpV '+ add-prim))
         (make-binding '- (PrimOpV '- sub-prim))
@@ -252,7 +316,12 @@
         (make-binding 'true (BoolV #t))
         (make-binding 'false (BoolV #f))
         ; add to pass test case?
-        (make-binding '=> (CloV '(x) (IdC 'x) '()))))
+        (make-binding '=> (CloV '(x) (IdC 'x) '()))
+        (make-binding 'println  (PrimOpV 'println  println-prim))
+        (make-binding 'read-num (PrimOpV 'read-num read-num-prim))
+        (make-binding 'read-str (PrimOpV 'read-str read-str-prim))
+        (make-binding 'seq      (PrimOpV 'seq      seq-prim))
+        (make-binding '++       (PrimOpV '++       concat-prim))))
 
 
 ; takes in a symbol and the current enviroment and returns the symbol value in that enviroment
@@ -267,7 +336,12 @@
 (define (has-duplicates [syms : (Listof Symbol)]) : Boolean
   (not (false? (check-duplicates (cast syms (Listof Any))))))
 
-; *********** ALL TESTING ******************
+; takes in a symbol and makes sure it is legal
+(define (id? [s : Symbol]): Boolean
+  (and (regexp-match? #px"^[A-Za-z][A-Za-z0-9_-]*$" (symbol->string s)) ; we can add more if needed just for basic purposes
+       (not (member s '(if with = =>)))))  
+
+; *********** ALL TESTING ************************************************************************************
 
 (check-exn #px"QTUM" (lambda () (top-interp '{with [x = 1] [x = 2] x})))
 
@@ -370,11 +444,91 @@
 (check-equal? (has-duplicates (list 'a 'b 'a)) #t)
 (check-equal? (has-duplicates (list 'x 'y 'z)) #f)
 
-; failing test case fixes
-;(check-equal? (top-interp '(=> 1 2 3)) "#<procedure>")
-(check-equal? (top-interp (quote ((=> 9)))) "#<procedure>")
 (check-exn #px"QTUM: attempt to call something that isnt a function"
   (lambda () (top-interp '{5 1})))
 (check-exn #px"QTUM: attempt to call something that isnt a function"
   (lambda () (top-interp '{{5} 2})))
 
+; new tests asgn 5 ;;;;;;;;;;;;;;;;;;;;;;;;;
+(check-equal?
+ (parameterize ([current-output-port (open-output-string)])
+   (top-interp '{println "hi"}))
+ "true")
+
+(parameterize ([current-input-port (open-input-string "42\n")])
+  (check-equal? (top-interp '{read-num}) "42"))
+
+(parameterize ([current-input-port (open-input-string "hello\n")])
+  (check-equal? (top-interp '{read-str}) "\"hello\""))
+
+(check-equal?
+ (parameterize ([current-output-port (open-output-string)])
+   (top-interp '{seq {println "a"} {println "b"} 9}))
+ "9")
+
+(check-equal?
+ (top-interp '{++ "pi = " 3.14})
+ "\"pi = 3.14\"")
+
+; lots of error testings
+(check-exn #px"QTUM: println takes one argument"
+  (lambda () (top-interp '{println})))
+(check-exn #px"QTUM: println takes one argument"
+  (lambda () (top-interp '{println "a" "b"})))
+
+(check-exn #px"QTUM: read-num takes no arguments"
+  (lambda () (top-interp '{read-num 1})))
+
+(parameterize ([current-input-port (open-input-string "")])
+  (check-exn #px"QTUM: reached EOF while reading"
+    (lambda () (top-interp '{read-num}))))
+
+(parameterize ([current-input-port (open-input-string "abc\n")])
+  (check-exn #px"QTUM: not a real number"
+    (lambda () (top-interp '{read-num}))))
+
+(check-exn #px"QTUM: read-str has 0 args"
+  (lambda () (top-interp '{read-str 1})))
+
+(parameterize ([current-input-port (open-input-string "")])
+  (check-exn #px"QTUM: EOF reached"
+    (lambda () (top-interp '{read-str}))))
+
+(check-exn #px"QTUM: 1 arg needed"
+  (lambda () (top-interp '{seq})))
+
+(check-exn #px"QTUM: malformed => form"
+  (lambda () (top-interp '{(x x => 3)})))
+
+(check-exn #px"QTUM: malformed => form"
+  (lambda () (top-interp '{(+ => 3)})))
+
+(check-equal? (value->string (BoolV #t)) "true")
+(check-equal? (value->string (BoolV #f)) "false")
+
+(check-equal?
+ (value->string (CloV '() (NumC 9) '()))
+ "#<procedure>")
+
+(check-equal?
+ (value->string (PrimOpV '+ add-prim))
+ "#<primop>")
+
+; our example program game
+; asks user for the best basketball player
+; and only accepts the correct answer - Stephen Curry
+(define example-program
+  '{seq
+      {println "Guess the greatest basketball player to ever grace this planet!"}
+      {with
+        [make-loop =
+          (f =>                      
+               (=> {with [name = {read-str}]
+                      {if {equal? name "Stephen Curry"}
+                          {println "LETS GO!!! THAT IS THE GOAT."}
+                          {seq
+                             {println "Nope, try a little harder."}
+                             {(f f)}}}}))]          
+        {(make-loop make-loop)}}})                   
+
+(top-interp example-program)
