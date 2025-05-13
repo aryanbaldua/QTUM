@@ -157,7 +157,7 @@
     [(CloV _ _ _) "#<procedure>"]
     [(PrimOpV _ _) "#<primop>"]))
 
-
+; converts qtum structures into actual string text
 (define (value->string [v : Value]): String
   (match v
     [(NumV n)     (~v n)]
@@ -517,7 +517,7 @@
 ; our example program game
 ; asks user for the best basketball player
 ; and only accepts the correct answer - Stephen Curry
-(define example-program
+(define basketball-game
   '{seq
       {println "Guess the greatest basketball player to ever grace this planet!"}
       {with
@@ -531,4 +531,5 @@
                              {(f f)}}}}))]          
         {(make-loop make-loop)}}})                   
 
-(top-interp example-program)
+;uncomment this line to play the game
+;(top-interp basketball-game)
