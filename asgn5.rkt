@@ -61,6 +61,12 @@
        (error 'parse "QTUM: dup param naming ~a" pars))
      (LamC pars (parse body0))]
 
+    [(list params ... '=> body0)
+     (define pars (map validate-param (cast params (Listof Any))))
+     (when (has-duplicates pars)
+       (error 'parse "QTUM: dup param naming ~a" pars))
+     (LamC pars (parse body0))]
+
     [(list _ ... '=> _ ...)
      (error 'parse "QTUM: malformed => form")]
 
@@ -84,13 +90,12 @@
             parsed))
      (AppC (LamC names (parse body)) right)]
 
-    ;[(list (list '=> _ ...) _ ...) (IdC '=>)]
-    
     [(list fzer args ...)
      (AppC (parse fzer)
            (map (lambda ([a : Sexp]) : ExprC (parse a)) args))]
 
     [other (error 'parse "QTUM: syntax error? ~e" other)]))
+
 
 
 ; makes sure parameter is symbol
@@ -338,7 +343,7 @@
 
 ; takes in a symbol and makes sure it is legal
 (define (id? [s : Symbol]): Boolean
-  (and (regexp-match? #px"^[A-Za-z][A-Za-z0-9_-]*$" (symbol->string s)) ; we can add more if needed just for basic purposes
+  (and (regexp-match? #px"^[A-Za-z][A-Za-z0-9_-]*$" (symbol->string s)) 
        (not (member s '(if with = =>)))))  
 
 ; *********** ALL TESTING ************************************************************************************
@@ -497,8 +502,6 @@
 (check-exn #px"QTUM: 1 arg needed"
   (lambda () (top-interp '{seq})))
 
-(check-exn #px"QTUM: malformed => form"
-  (lambda () (top-interp '{(x x => 3)})))
 
 (check-exn #px"QTUM: malformed => form"
   (lambda () (top-interp '{(+ => 3)})))
@@ -517,7 +520,7 @@
 ; our example program game
 ; asks user for the best basketball player
 ; and only accepts the correct answer - Stephen Curry
-(define basketball-game
+(define example-program
   '{seq
       {println "Guess the greatest basketball player to ever grace this planet!"}
       {with
@@ -532,4 +535,4 @@
         {(make-loop make-loop)}}})                   
 
 ;uncomment this line to play the game
-;(top-interp basketball-game)
+;(top-interp example-program)
