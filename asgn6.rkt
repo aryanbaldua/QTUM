@@ -54,44 +54,44 @@
 ; makes initial top level env for interp
 (define (build-top-env [sto : Store]) : Env
   (list
-   (make-binding '+        (PrimOpV '+  add-prim)        sto)
-   (make-binding '-        (PrimOpV '-  sub-prim)        sto)
-   (make-binding '*        (PrimOpV '*  mul-prim)        sto)
-   (make-binding '/        (PrimOpV '/  div-prim)        sto)
-   (make-binding '<=       (PrimOpV '<= leq-prim)        sto)
-   (make-binding 'equal?   (PrimOpV 'equal? equal?-prim) sto)
-   (make-binding 'strlen   (PrimOpV 'strlen strlen-prim) sto)
+   (make-binding '+ (PrimOpV '+ add-prim) sto)
+   (make-binding '- (PrimOpV '- sub-prim) sto)
+   (make-binding '* (PrimOpV '* mul-prim) sto)
+   (make-binding '/ (PrimOpV '/ div-prim)sto)
+   (make-binding '< (PrimOpV '< lt-prim) sto)
+   (make-binding '<= (PrimOpV '<= leq-prim) sto)
+   (make-binding 'equal? (PrimOpV 'equal? equal?-prim) sto)
+   (make-binding 'strlen (PrimOpV 'strlen strlen-prim) sto)
    (make-binding 'substring(PrimOpV 'substring substring-prim) sto)
-   (make-binding 'println  (PrimOpV 'println  println-prim)  sto)
+   (make-binding 'println (PrimOpV 'println  println-prim) sto)
    (make-binding 'read-num (PrimOpV 'read-num read-num-prim) sto)
    (make-binding 'read-str (PrimOpV 'read-str read-str-prim) sto)
-   (make-binding 'seq      (PrimOpV 'seq      seq-prim)      sto)
-   (make-binding '++       (PrimOpV '++       concat-prim)   sto)
+   (make-binding 'seq (PrimOpV 'seq seq-prim) sto)
+   (make-binding '++ (PrimOpV '++ concat-prim) sto)
    (make-binding 'make-array (PrimOpV 'make-array make-array-prim) sto)
-   (make-binding 'array    (PrimOpV 'array    array-prim)    sto)
-   (make-binding 'aref     (PrimOpV 'aref     aref-prim)     sto)
-   (make-binding 'aset!    (PrimOpV 'aset!    aset!-prim)    sto)
-   (make-binding 'error    (PrimOpV 'error    user-error-prim) sto)
-   (make-binding 'null     (NullV)  sto)
-   (make-binding 'true     (BoolV #t) sto)
-   (make-binding 'false    (BoolV #f) sto)))
+   (make-binding 'array (PrimOpV 'array array-prim)    sto)
+   (make-binding 'aref (PrimOpV 'aref aref-prim)     sto)
+   (make-binding 'aset! (PrimOpV 'aset! aset!-prim)    sto)
+   (make-binding 'error (PrimOpV 'error user-error-prim) sto)
+   (make-binding 'null (NullV)  sto)
+   (make-binding 'true (BoolV #t) sto)
+   (make-binding 'false (BoolV #f) sto)))
 
 
 ; takes in an Sexp and converts into the appropriate ExprC format
 (define (parse [sexp : Sexp]) : ExprC
   (match sexp
     [(? real? n) (NumC n)]
-    
     [(? string? str) (StringC str)]
 
     [(? symbol? s)
      (when (member s '(if with = =>))
-       (error 'parse "QTUM: cannot use this word, already an identifier: ~a" s)) 
+       (error 'parse "QTUM: cannot use this word, already an identifier: ~a" s))
      (IdC s)]
 
     [(list (? symbol? id) ':= rhs)
      (SetC id (parse rhs))]
-    
+
     [(list 'if test then else)
      (IfC (parse test) (parse then) (parse else))]
 
@@ -101,18 +101,24 @@
     [(list (? symbol? p) '=> body0)
      (LamC (list (cast p Symbol)) (parse body0))]
 
-    [(list (list params ...) '=> body0)
-     (define pars (map validate-param params))
-     (when (has-duplicates pars)
-       (error 'parse "QTUM: dup param naming ~a" pars))
-     (LamC pars (parse body0))]
+    [(list p1 p2 '=> body0)
+     (let ([checked (map validate-param (list p1 p2))])
+       (when (has-duplicates checked)
+         (error 'parse "QTUM: dup param naming ~a" checked))
+       (LamC checked (parse body0)))]
+    
+    [(list p1 p2 p3 ps ... '=> body0)
+     (let* ([params (cons p1 (cons p2 (cons p3 ps)))]
+            [checked (map validate-param params)])
+       (when (has-duplicates checked)
+         (error 'parse "QTUM: dup param naming ~a" checked))
+       (LamC checked (parse body0)))]
 
-    ; new change from code review
-    [(list params ... '=> body0)
-     (define pars (map validate-param (cast params (Listof Any))))
-     (when (has-duplicates pars)
-       (error 'parse "QTUM: dup param naming ~a" pars))
-     (LamC pars (parse body0))]
+    [(list (list params ...) '=> body0)
+     (define checked (map validate-param params))
+     (when (has-duplicates checked)
+       (error 'parse "QTUM: dup param naming ~a" checked))
+     (LamC checked (parse body0))]
 
     [(list _ ... '=> _ ...)
      (error 'parse "QTUM: malformed => form")]
@@ -142,6 +148,7 @@
            (map (lambda ([a : Sexp]) : ExprC (parse a)) args))]
 
     [other (error 'parse "QTUM: syntax error? ~e" other)]))
+
 
 
 ; makes sure parameter is symbol
@@ -416,6 +423,12 @@
          (error 'aset! "QTUM: index out of range"))]
     [_ (error 'aset! "QTUM: need array index value")]))
 
+
+(define (lt-prim [args : (Listof Value)] [sto : Store]) : Value
+  (match args
+    [(list (NumV a) (NumV b)) (BoolV (< a b))]
+    [_ (error 'lt-prim "QTUM: < expects two numbers")]))
+
 ;********************END PRIM OPS***************************
 
 ; takes in a symbol and a value and returns the binding which is the symbol-value pair
@@ -635,13 +648,36 @@
 ;uncomment this line to play the game
 ;(top-interp example-program)
 
-; while function
-(top-interp
- '(with (x = 0)
-    (seq
-      (x := 9)     ; variable first, then :=, then rhs
-      x))
-  20)              ; → "9"
+
+; while function accepting guard function and a body function and keeps runnig till guard returns false
+; in-order accepts an array of numbers and its size and returns if array is strictly in increasing order
+
+
+(define while
+  '(with (while = "bogus")
+     (seq
+       (while := ((g b) => (if (g) (seq (b) (while g b)) null)))
+       while)))
+
+
+(define in-order
+  '(with (while = "bogus")
+     (seq
+       (while := ((g b) => (if (g) (seq (b) (while g b)) null)))
+       (with (in-order = "bogus")
+         (seq
+           (in-order :=
+             ((arr size) =>
+              (with (ok = true) (i = 0)
+                (seq
+                  (while
+                    (=> (if ok (< i (- size 1)) false))
+                    (=> (if (< (aref arr i) (aref arr (+ i 1)))
+                            (i := (+ i 1))
+                            (seq (ok := false) (i := size)))))
+                  ok))))
+           in-order)))))
+
 
 (check-equal?
  (value->string (PrimOpV '+ add-prim))
@@ -767,6 +803,11 @@
        [arr (make-array-prim (list (NumV 2) (NumV 0)) sto)])
   (check-equal? (aset!-prim (list arr (NumV 1) (BoolV #t)) sto)
                 (NullV))
+
+(check-exn #px"QTUM: < expects two numbers"
+  (lambda () (top-interp '{< 1 "apple"})))
+
+ (check-equal? (top-interp '{< 1 5}) "true")
   
 ; checkign mutation
   (check-equal? (aref-prim (list arr (NumV 1)) sto) (BoolV #t))
@@ -780,3 +821,23 @@
 ; id? tests
 (check-equal? (id? 'foo) #t)
 (check-equal? (id? 'if) #f)
+
+; asgn6 failing tests
+(check-equal?
+  (parse '(z y x => (w => (+ z (w y)))))
+  (LamC '(z y x)
+        (LamC '(w)
+              (AppC (IdC '+)
+                    (list (IdC 'z)
+                          (AppC (IdC 'w) (list (IdC 'y))))))))
+(check-exn #px"QTUM: dup param naming"
+  (lambda () (parse '(a b a => (+ a b)))))
+
+
+(check-equal? (top-interp
+  '((minus => (minus 8 5))
+    (a b => (+ a (* -1 b))))
+  1000) "3")
+
+(check-exn #px"QTUM: dup param naming"
+  (lambda () (parse '(foo foo => (+ foo 1)))))
