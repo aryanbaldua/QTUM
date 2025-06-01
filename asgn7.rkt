@@ -5,12 +5,12 @@
 
 
 ; QTUM 7 structures
-(struct NumT   () #:transparent)
-(struct BoolT  () #:transparent)
-(struct StrT   () #:transparent)
+(struct NumT () #:transparent)
+(struct BoolT () #:transparent)
+(struct StrT () #:transparent)
 (struct ArrowT ([args : (Listof Ty)] [ret : Ty]) #:transparent)
 
-(define-type Ty   (U NumT BoolT StrT ArrowT))
+(define-type Ty (U NumT BoolT StrT ArrowT))
 (struct BindAnn ([name : Symbol] [ty : Ty] [rhs : ExprC]) #:transparent)
 
 (define-type BindingT (Pairof Symbol Ty))
@@ -26,7 +26,7 @@
 (struct IfC ([test : ExprC] [then : ExprC] [else : ExprC]) #:transparent)
 (struct WithC ([bindings : (Listof (Pairof Symbol ExprC))] [body : ExprC])  #:transparent)
 ;(struct SetC ([id : Symbol] [rhs : ExprC]) #:transparent)
-(struct RecC ([names : (Listof Symbol)] [tys   : (Listof Ty)] [rhss  : (Listof ExprC)] [body  : ExprC]) #:transparent)
+(struct RecC ([names : (Listof Symbol)] [tys : (Listof Ty)] [rhss : (Listof ExprC)] [body  : ExprC]) #:transparent)
 
 
 (define-type Value (U NumV BoolV StringV CloV PrimOpV))
@@ -83,9 +83,9 @@
 ; go through expression e and make sure all operations are used according to their type
 (define (type-check [e : ExprC] [tenv : TEnv]) : Ty
   (match e
-    [(NumC _)        (NumT)]
-    [(StringC _)     (StrT)]
-    [(IdC x)         (lookup-type tenv x)]
+    [(NumC _) (NumT)]
+    [(StringC _) (StrT)]
+    [(IdC x) (lookup-type tenv x)] 
 
     [(IfC t c a)
      (unless (equal? (type-check t tenv) (BoolT))
@@ -102,12 +102,18 @@
        [(ArrowT argtys ret)
         (unless (= (length argtys) (length args))
           (error 'type-check "QTUM: wrong arity"))
-        (for ([got (map (lambda ([a : ExprC]) (type-check a tenv)) args)]
-              [exp argtys])
-          (unless (equal? got exp)
-            (error 'type-check
-                   "QTUM: arg type mismatch – expected ~a, got ~a"
-                   exp got)))
+  
+        (define actual-types (map (lambda ([a : ExprC]) (type-check a tenv)) args))
+  
+        (for-each 
+         (lambda (expected actual)
+           (unless (equal? actual expected)
+             (error 'type-check
+                    "QTUM: arg type mismatch – expected ~a, got ~a"
+                    expected actual)))
+         argtys
+         actual-types)
+  
         ret]
        [_ (error 'type-check "QTUM: trying to call non-function")])]
 
@@ -121,11 +127,11 @@
     [(RecC names tys rhss body)
      (define tenv* (append (map (lambda ([nm  : Symbol] [ty  : Ty]) : BindingT
           (cons nm ty)) names tys) tenv))
-     (for ([rhs rhss] [τ tys] [nm names])
-       (unless (equal? (type-check rhs tenv*) τ)
+     (for ([rhs rhss] [tau tys] [nm names])
+       (unless (equal? (type-check rhs tenv*) tau)
          (error 'type-check
                 "QTUM: rhs of ~a expected ~a, got ~a"
-                nm τ (type-check rhs tenv*))))
+                nm tau (type-check rhs tenv*))))
      (type-check body tenv*)]
     
     [(WithC bindings body)
@@ -134,10 +140,10 @@
               (car p)) bindings))
      (define rhss (map (lambda ([p : (Pairof Symbol ExprC)]) : ExprC
               (cdr p)) bindings))
-     (define tys   (make-list (length names) (NumT)))
+     (define tys (make-list (length names) (NumT)))
      (type-check (AppC (LamC names tys body) rhss) tenv)]
     
-    [_ (error 'type-check "QTUM: unhandled expression in type-check")]
+    ;[_ (error 'type-check "QTUM: unhandled expression in type-check")]
     ))
 
 
@@ -156,7 +162,7 @@
     (error 'make-initial-store "QTUM: memory too small"))
   (define v (make-vector memsize (ann (NumV 0) Value)))
   ; use hints on course website
-  (vector-set! v 0 (NumV 1))
+  (vector-set! v (ann 0 Natural) (NumV 1))
   v)
 
 
@@ -172,13 +178,13 @@
    ;(make-binding 'equal? (PrimOpV 'equal? equal?-prim) sto)
    ;(make-binding 'strlen (PrimOpV 'strlen strlen-prim) sto)
    ;(make-binding 'substring(PrimOpV 'substring substring-prim) sto)
-   (make-binding 'println (PrimOpV 'println  println-prim) sto)
-   (make-binding 'read-num (PrimOpV 'read-num read-num-prim) sto)
-   (make-binding 'read-str (PrimOpV 'read-str read-str-prim) sto)
-   (make-binding 'num-eq? (PrimOpV 'num-eq? num-eq-prim) sto)
-   (make-binding 'str-eq? (PrimOpV 'str-eq? str-eq-prim) sto)
+   ;(make-binding 'println (PrimOpV 'println  println-prim) sto)
+   ;(make-binding 'read-num (PrimOpV 'read-num read-num-prim) sto)
+   ;(make-binding 'read-str (PrimOpV 'read-str read-str-prim) sto)
+   ;(make-binding 'num-eq? (PrimOpV 'num-eq? num-eq-prim) sto)
+   ;(make-binding 'str-eq? (PrimOpV 'str-eq? str-eq-prim) sto)
    ;(make-binding 'seq (PrimOpV 'seq seq-prim) sto)
-   (make-binding '++ (PrimOpV '++ concat-prim) sto)
+   ;(make-binding '++ (PrimOpV '++ concat-prim) sto)
    ;(make-binding 'make-array (PrimOpV 'make-array make-array-prim) sto)
    ;(make-binding 'array (PrimOpV 'array array-prim)    sto)
    ;(make-binding 'aref (PrimOpV 'aref aref-prim)     sto)
@@ -214,30 +220,25 @@
 ; turns each binding from user into internal BindAnn struct
 (define (parse-binding [b : Sexp]) : BindAnn
   (match b
-
+    
     [(list (? symbol? id) ': tysexp '= rhs)
-     (BindAnn (cast id Symbol) (parse-type tysexp) (parse rhs))]
+     (BindAnn id (parse-type tysexp) (parse rhs))]
     
     [(list (? symbol? id) '= rhs)
-     (BindAnn (cast id Symbol) (NumT) (parse rhs))]
-
-    [(list (? symbol? id:ty) '= rhs)
-     (define pieces (string-split (symbol->string (cast id:ty Symbol)) ":"))
-     (if (= (length pieces) 2)
-         (BindAnn (string->symbol (first pieces))
-                  (parse-type (string->symbol (second pieces)))
-                  (parse rhs))
-         (error 'parse "QTUM: bad binding ~a" id:ty))]
-    
+     (let ([pieces (string-split (symbol->string id) ":")])
+       (if (= (length pieces) 2)
+           (BindAnn (string->symbol (first pieces))
+                    (parse-type (string->symbol (second pieces)))
+                    (parse rhs))
+           (BindAnn id (NumT) (parse rhs))))]
     [_ (error 'parse "QTUM: bad binding ~a" b)]))
-
 
 ; takes raw Sexpr and converts into AST
 (define (parse [sexp : Sexp]) : ExprC
   (match sexp
-    [(? real?   n)   (NumC n)]
+    [(? real? n) (NumC n)]
     
-    [(? string? s)   (StringC s)]
+    [(? string? s) (StringC s)]
 
     [(? symbol? s)
      (when (member s '(if with rec = => :))
@@ -246,19 +247,19 @@
 
     [(list 'if t c a) (IfC (parse t) (parse c) (parse a))]
 
+    [(list (? symbol? id) ': tysexp '=> body)
+     (LamC (list id) (list (parse-type tysexp)) (parse body))]
+    
     [(list params ... '=> body)
      (define parsed  (map parse-param (cast params (Listof Sexp))))
      (define names   (map (lambda ([p : (Pairof Symbol Ty)]) : Symbol (car p)) parsed))
      (when (has-duplicates names)
        (error 'parse "QTUM: duplicate params ~a" names))
-     (define ptys    (map (lambda ([p : (Pairof Symbol Ty)]) : Ty (cdr p))  parsed))
+     (define ptys (map (lambda ([p : (Pairof Symbol Ty)]) : Ty (cdr p))  parsed))
      (LamC names ptys (parse body))]
 
-    [(list (? symbol? id) ': tysexp '=> body)
-     (LamC (list (cast id Symbol)) (list (parse-type tysexp)) (parse body))]
-
-    [(list '=> body)
-     (LamC '() '() (parse body))]
+    ;[(list '=> body)
+     ;(LamC '() '() (parse body))]
 
     [(list 'with bindings ... body)
      (define b* (map parse-binding (cast bindings (Listof Sexp))))
@@ -286,18 +287,22 @@
 
 
 ; makes sure parameter is symbol
-(define (validate-param [p : Any]) : Symbol
-  (cond
-    [(symbol? p) (cast p Symbol)]
-    [(null? p) (error 'parse-fundef "QTUM: empty list found in parameter")]
-    [else (error 'parse-fundef "QTUM: param isnt a symbol ~e" p)]))
+;(define (validate-param [p : Any]) : Symbol
+ ; (cond
+  ;  [(symbol? p) p]
+   ; [(null? p) (error 'parse-fundef "QTUM: empty list found in parameter")]
+    ;[else (error 'parse-fundef "QTUM: param isnt a symbol ~e" p)]))
 
 
 ; takes in a store and the amount of space and returns index of memory allocation
 (define (allocate [sto : Store] [n : Natural]) : Location
+  (define header (vector-ref sto (ann 0 Natural)))
   (define first-free
-    (match (vector-ref sto (ann 0 Natural))
-      	[(NumV k) (cast k Natural)]
+    (match header
+      [(NumV k)
+       (if (and (integer? k) (exact-nonnegative-integer? k))
+           k
+           (error 'allocate "QTUM: header is not a natural number"))]
       [_ (error 'allocate "QTUM: corrupted header")]))
   (define new-free (+ first-free n))
   (when (> new-free (vector-length sto))
@@ -381,7 +386,7 @@
     ;[(NullV) "null"]
     ))
 
-
+#|
 ; converts qtum structures into actual string text
 (define (value->string [v : Value]): String
   (match v
@@ -390,7 +395,7 @@
     [(StringV s) s]
     [(CloV _ _ _) "#<procedure>"]
     [(PrimOpV _ _) "#<primop>"]))
-
+|#
 
 ;*********************ALL PRIM OPS***************************
 ; takes in two numbers and adds them together
@@ -533,7 +538,7 @@
     [_ (error 'lt-prim "QTUM: < expects two numbers")]))
 
 
-|#
+
 
 (define (num-eq-prim [args : (Listof Value)] [sto : Store]) : Value
   (match args
@@ -551,7 +556,7 @@
 (define (println-prim [args : (Listof Value)] [sto : Store]): Value
   (match args
     [(list v)
-     (displayln (value->string v))
+     (displayln (serialize v))
      (BoolV #t)]                          
     [_ (error 'println "QTUM: println takes one argument")]))
 
@@ -562,12 +567,13 @@
         (display "> ")
         (flush-output)
         (let ([r (read-line)])
-          (if (string? r)
-              (let ([maybe-num (string->number r)])
-                (if (and maybe-num (real? maybe-num))
-                    (NumV (cast maybe-num Real))
-                    (error 'read-num "QTUM: not a real number")))
-              (error 'read-num "QTUM: reached EOF while reading"))))
+          (cond
+            [(string? r)
+             (let ([maybe-num (string->number r)])
+               (cond
+                 [(real? maybe-num) (NumV maybe-num)]
+                 [else (error 'read-num "QTUM: not a real number")]))]
+            [else (error 'read-num "QTUM: reached EOF while reading")])))
       (error 'read-num "QTUM: read-num takes no arguments")))
 
 
@@ -585,13 +591,11 @@
 
 
 
-
-
 ; makes each of the args text and concats into one singular string
 (define (concat-prim [args : (Listof Value)] [sto : Store]): Value
-  (define pieces (map value->string args))
+  (define pieces (map serialize args))
   (StringV (apply string-append pieces)))
-
+|#
 ;********************END PRIM OPS***************************
 
 ; takes in a symbol and a value and returns the binding which is the symbol-value pair
@@ -616,29 +620,28 @@
 
 ; takes in a list of symbols and make sure that there are no repeats
 (define (has-duplicates [syms : (Listof Symbol)]) : Boolean
-  (not (false? (check-duplicates (cast syms (Listof Any))))))
-
+  (not (false? (check-duplicates (map (lambda (s) s) syms)))))
 
 ; takes in a symbol and makes sure it is legal
-(define (id? [s : Symbol]): Boolean
-  (and (regexp-match? #px"^[A-Za-z][A-Za-z0-9_-]*$" (symbol->string s)) 
-       (not (member s '(if with = =>)))))
+;(define (id? [s : Symbol]): Boolean
+ ; (and (regexp-match? #px"^[A-Za-z][A-Za-z0-9_-]*$" (symbol->string s)) 
+  ;     (not (member s '(if with = =>)))))
 
 
 ; *********** ALL TESTING ************************************************************************************
 
-(check-equal? (top-interp '0)              "0")
-(check-equal? (top-interp '{(x) => x})     "#<procedure>")
-(check-equal? (top-interp '+)              "#<primop>")
-(check-equal? (top-interp 'true)           "true")
-(check-equal? (top-interp 'false)          "false")
+(check-equal? (top-interp '0) "0")
+(check-equal? (top-interp '{(x) => x}) "#<procedure>")
+(check-equal? (top-interp '+) "#<primop>")
+(check-equal? (top-interp 'true) "true")
+(check-equal? (top-interp 'false) "false")
 
 ; arithmetic
-(check-equal? (top-interp '{+ 4 5})        "9")
-(check-equal? (top-interp '{- 10 3})       "7")
-(check-equal? (top-interp '{* 2 6})        "12")
-(check-equal? (top-interp '{/ 8 2})        "4")
-(check-equal? (top-interp '{<= 3 7})       "true")
+(check-equal? (top-interp '{+ 4 5}) "9")
+(check-equal? (top-interp '{- 10 3}) "7")
+(check-equal? (top-interp '{* 2 6}) "12")
+(check-equal? (top-interp '{/ 8 2}) "4")
+(check-equal? (top-interp '{<= 3 7}) "true")
 
 (check-exn #px"QTUM" (lambda () (top-interp '{+ 1})))
 (check-exn #px"QTUM" (lambda () (top-interp '{+ 1 2 3})))
@@ -650,9 +653,14 @@
 (check-equal? (top-interp '{if false 1 0}) "0")
 (check-exn    #px"QTUM" (lambda () (top-interp '{if 5 1 0})))
 
-(check-equal? (top-interp
-               '{with [x = 3] [y = 4] {+ x y}})
-              "7")
+
+(check-equal?
+ (parse-binding '(x = 3))
+ (BindAnn 'x (NumT) (NumC 3)))
+
+(check-equal?
+ (top-interp '{with [x = 3] [y = 4] {+ x y}})
+ "7")
 
 ; edge case parser
 (check-exn #px"QTUM" (lambda () (top-interp 'if)))
@@ -693,3 +701,135 @@
            (lambda () (top-interp
                    '{rec [bad : {num -> num}
                           = {{s : str} => s}] 0})))
+
+; errors coverage
+(check-exn #px"QTUM: bad type"
+  (lambda () (parse-type '"not-a-type")))
+
+(check-exn #px"QTUM: unbound id"
+  (lambda () (lookup-type '() 'foo)))
+
+(check-exn #px"QTUM: branches differ"
+  (lambda ()
+    (type-check
+     (IfC (IdC 'b)
+          (NumC 5)
+          (StringC "oops"))
+     (list (cons 'b (BoolT))))))
+
+(check-exn #px"QTUM: trying to call non-function"
+  (lambda ()
+    (type-check
+     (AppC (NumC 5) (list (NumC 2)))
+     '())))
+
+(check-exn #px"QTUM: internal lamC length mismatch"
+  (lambda ()
+    (type-check
+     (LamC '(x y) (list (NumT)) (IdC 'x))
+     '())))
+
+(check-equal?
+ (type-check
+  (WithC
+   (list (cons 'x (NumC 3)))
+   (AppC (IdC '+) (list (IdC 'x) (NumC 2))))
+  base-tenv)
+ (NumT))
+
+(check-exn #px"QTUM: memory too small"
+  (lambda () (make-initial-store 1)))
+
+
+(check-exn #px"QTUM: bad binding"
+  (lambda () (parse-binding '(= x 1)))) ; malformed — starts with '='
+
+(check-exn #px"QTUM: duplicate params"
+  (lambda () (parse '([x:num] [x:num] => x))))
+
+(check-equal?
+ (parse '(x : num => x))
+ (LamC '(x) (list (NumT)) (IdC 'x)))
+
+(check-equal?
+ (parse '(=> 42))
+ (LamC '() '() (NumC 42)))
+
+(check-exn #px"QTUM: dup names in rec"
+  (lambda () (parse '(rec [x : num = 1] [x : num = 2] x))))
+
+(let ([sto (make-initial-store 3)])
+   (vector-set! sto (ann 0 Natural) (NumV -1))
+  (check-exn #px"QTUM: header is not a natural number"
+    (lambda () (allocate sto 1))))
+
+(let ([sto (make-initial-store 3)])
+  (vector-set! sto (ann 0 Natural) (BoolV #t))
+  (check-exn #px"QTUM: corrupted header"
+    (lambda () (allocate sto 1))))
+
+(define (fresh-sto-env)
+  (let ([sto (make-initial-store 20)])
+    (values sto (build-top-env sto))))
+
+(let-values ([(sto env) (fresh-sto-env)])
+  (check-exn #px"QTUM: non boolean value"
+    (lambda () (interp (IfC (NumC 5) (NumC 1) (NumC 0)) env sto))))
+
+(define with-wrong-arity
+  (WithC
+   (list (cons 'f (LamC '(x y) '() (NumC 0))))
+   (AppC (IdC 'f) (list (NumC 1)))))
+
+(let-values ([(sto env) (fresh-sto-env)])
+  (check-exn #px"QTUM: wrong amount of args"
+    (lambda () (interp with-wrong-arity env sto))))
+
+(let-values ([(sto env) (fresh-sto-env)])
+  (check-exn #px"QTUM: attempt to call something that isnt a function"
+    (lambda () (interp (AppC (NumC 5) (list (NumC 1))) env sto))))
+
+(let-values ([(sto env) (fresh-sto-env)])
+  (check-equal? (interp (StringC "hi") env sto)
+                (StringV "hi")))
+
+(check-exn #px"QTUM: out of memory"
+  (lambda ()
+    (allocate (make-initial-store 3) 3)))
+
+(define (fresh-store) (make-initial-store 10))
+
+(check-exn #px"QTUM: adding expects two numbers"
+  (lambda () (add-prim (list (NumV 1)) (fresh-store))))
+
+(check-exn #px"QTUM: subtract needs 2 numbers"
+  (lambda () (sub-prim (list (NumV 5) (StringV "oops")) (fresh-store))))
+
+(check-exn #px"QTUM: multiplying needs 2 numbers"
+  (lambda () (mul-prim (list (NumV 2) (NumV 3) (NumV 4)) (fresh-store))))
+
+(check-exn #px"QTUM: division needs 2 numbers"
+  (lambda () (div-prim (list (NumV 8)) (fresh-store))))
+
+(check-exn #px"QTUM: leq-prim needs 2 numbers"
+  (lambda () (leq-prim (list (StringV "x") (NumV 3)) (fresh-store))))
+
+(check-exn #px"QTUM: unbound identifier"
+  (lambda () (lookup-env '() 'foo)))
+
+
+; others
+(check-equal? (parse-param 'foo)
+              (cons 'foo (NumT)))
+
+(check-equal?
+ (parse '(=> 42))
+ (LamC '() '() (NumC 42)))
+
+(check-equal? (top-interp '"hello") "\"hello\"")
+
+(check-equal? (top-interp '{with [x = 1] {+ x 2}}) "3")
+
+(check-equal?
+ (parse-binding '(foo:num = 1))
+ (BindAnn 'foo (NumT) (NumC 1)))
