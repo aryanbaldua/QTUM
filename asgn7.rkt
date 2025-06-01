@@ -14,7 +14,7 @@
 (struct BindAnn ([name : Symbol] [ty : Ty] [rhs : ExprC]) #:transparent)
 
 (define-type BindingT (Pairof Symbol Ty))
-(define-type TEnv (Listof BindingT))
+(define-type Tenv (Listof BindingT))
 
 ; Define ExprC lang
 (define-type ExprC (U NumC IdC AppC LamC StringC IfC WithC RecC))
@@ -73,7 +73,7 @@
      (error 'parse-type "QTUM: bad type ~a" s)]))
 
 ; searches up variables type in the type enviroment
-(define (lookup-type [tenv : TEnv] [x : Symbol]) : Ty
+(define (lookup-type [tenv : Tenv] [x : Symbol]) : Ty
   (match tenv
     ['() (error 'type-check "QTUM: unbound id ~a" x)]
     [(cons (cons y ty) rest)
@@ -81,7 +81,7 @@
 
 
 ; go through expression e and make sure all operations are used according to their type
-(define (type-check [e : ExprC] [tenv : TEnv]) : Ty
+(define (type-check [e : ExprC] [tenv : Tenv]) : Ty
   (match e
     [(NumC _) (NumT)]
     [(StringC _) (StrT)]
@@ -199,19 +199,19 @@
 (define (parse-param [p : Sexp]) : (Pairof Symbol Ty)
   (match p
     [(list (? symbol? id) ': tysexp)
-     (cons (cast id Symbol) (parse-type tysexp))]
+     (cons id (parse-type tysexp))]
 
     [(list (? symbol? id:ty))
-     (define pieces (string-split (symbol->string (cast id:ty Symbol)) ":"))
+     (define pieces (string-split (symbol->string id:ty) ":"))
      (cond
        [(= (length pieces) 2)
         (define id-sym  (string->symbol (first  pieces)))
         (define ty-sym  (string->symbol (second pieces)))
         (cons id-sym (parse-type ty-sym))]
-       [else (cons (cast id:ty Symbol) (NumT))])]
+       [else (cons id:ty (NumT))])]
 
     [(? symbol? id)
-     (cons (cast id Symbol) (NumT))]
+     (cons id (NumT))]
 
     [_ (error 'parse "QTUM: bad param spec ~a" p)]))
 
@@ -220,10 +220,12 @@
 ; turns each binding from user into internal BindAnn struct
 (define (parse-binding [b : Sexp]) : BindAnn
   (match b
-    
     [(list (? symbol? id) ': tysexp '= rhs)
      (BindAnn id (parse-type tysexp) (parse rhs))]
-    
+
+    [(list (list (? symbol? id) ': tysexp) '= rhs)
+     (BindAnn id (parse-type tysexp) (parse rhs))]
+    ;; (z = rhs)
     [(list (? symbol? id) '= rhs)
      (let ([pieces (string-split (symbol->string id) ":")])
        (if (= (length pieces) 2)
@@ -232,6 +234,7 @@
                     (parse rhs))
            (BindAnn id (NumT) (parse rhs))))]
     [_ (error 'parse "QTUM: bad binding ~a" b)]))
+
 
 ; takes raw Sexpr and converts into AST
 (define (parse [sexp : Sexp]) : ExprC
@@ -833,3 +836,8 @@
 (check-equal?
  (parse-binding '(foo:num = 1))
  (BindAnn 'foo (NumT) (NumC 1)))
+
+; failing test cases
+(check-equal?
+  (top-interp '{with [(z : (-> num)) = (=> 3)] [(q : num) = 9] {+ (z) q}})
+  "12")
